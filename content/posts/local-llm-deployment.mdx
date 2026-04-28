@@ -1,0 +1,133 @@
+---
+title: "本地大模型与 Agent 跨端部署实录：从 Termux 到 LM Studio 极限压榨"
+date: "2026-04-20"
+description: "在手机（Termux）和 PC（WSL + LM Studio）上本地部署大模型的实战踩坑记录，重点解决 Agent 模式下 64k 上下文在 GTX 1060 6GB 显存上的性能极限问题。"
+tags: ["LLM", "Local AI", "GTX 1060", "LM Studio", "Termux", "WSL", "踩坑记录"]
+lang: "zh"
+---
+
+**核心设备**：
+
+- **移动端**：iQOO Neo6（骁龙 8 Gen 1，8GB/12GB RAM）
+- **PC 端**：i7-8750H + GTX 1060（6GB 显存）+ 16GB RAM + WSL（Ubuntu）
+
+## 背景与目标
+
+尝试在本地局域网内搭建可供 `hermes-agent` 调用的 LLM 后端服务。初期尝试在手机 Termux 上使用 `llama.cpp` 运行 Qwen 2B/1.5B 模型，由于手机算力处理长文本 Agent 预设过慢（15k Token 预热耗时超 15 分钟），最终将方案迁移至笔记本，利用 LM Studio 与 6GB 显存的老显卡（GTX 1060）完成极限配置，成功承载 64k 上下文要求。
+
+---
+
+## 阶段一：手机端（Termux）踩坑
+
+### 运行中途 Termux 崩溃闪退
+
+**现象**：模型加载正常，但在生成回复中途 Termux 突然崩溃闪退。
+
+**原因**：随着上下文（KV Cache）增加，内存占用飙升，触发了 Android 系统的 OOM Killer；或是高通 OpenCL 驱动单次显存分配受限（最大 1GB）。
+
+**解决方案（降压运行）**：
+
+```bash
+-ngl 8            # 降低 GPU 卸载层数，大头交回 CPU
+--ctx-size 1024   # 限制上下文大小，控制 KV Cache 膨胀
+--threads 4       # 限制线程数，防止发热降频与系统卡死
+--no-mmap         # 关闭 mmap，使内存占用更透明，防系统误判
+```
+
+### 将手机转为局域网 API 服务器
+
+需求是让 PC 端的 Agent 能够通过网络调用手机模型。需要改用 `llama-server` 并设置 `--host 0.0.0.0` 允许外部访问：
+
+```bash
+./build/bin/llama-server -m qwen1.5b.gguf --host 0.0.0.0 --port 8080 -ngl 14 --ctx-size 8192
+```
+
+---
+
+## 阶段二：Agent（Hermes）接入与配置排错
+
+### APIConnectionError（URL 格式错误）
+
+- **错误信息**：`Endpoint: http://http://192.168.1.x:8080/v1`
+- **原因**：配置文件中 `base_url` 前面重复输入了 `http://`。
+- **解决**：严格检查 URL 格式，确保为 `http://[IP]:[端口]/v1`。
+
+### Agent 拒绝初始化（Failed to initialize agent）
+
+- **错误信息**：模型 context window（如 2048）低于 Hermes Agent 最低要求的 **64,000**。
+- **原因**：Agent 会发送极其庞大的系统提示词（包含几十种工具定义、人格设定），硬性校验模型是否支持 64k。
+- **解决方案（配置覆盖法）**：
+
+```yaml
+model:
+  default: qwen1.5b
+  provider: custom
+  context_length: 64000  # 覆盖主模型检查
+
+auxiliary:
+  compression:
+    provider: custom     # 必须显式指定 provider 为 custom
+    model: qwen1.5b
+    context_length: 64000 # 覆盖辅助模型检查
+```
+
+> 注意：必须同时覆盖主模型和辅助压缩模型（Auxiliary Compression Model）。
+
+### YAML 配置不生效（排雷）
+
+**原因**：
+1. 文件中存在多个同名节点（上方 `auxiliary` 被文件尾部的默认 `auxiliary` 块覆盖）。
+2. YAML 对缩进极其敏感，多一个空格或使用 Tab 都会导致解析失败。
+
+**解决**：用支持 YAML 高亮的编辑器打开，排查同名节点，严格遵守 2/4 空格缩进。
+
+---
+
+## 阶段三：PC 端（WSL + LM Studio）性能极限压榨
+
+手机处理 Agent 的 15k+ Token 预设（Prefill）需要十几分钟，换用 PC 端的 GTX 1060。
+
+### WSL 无法访问 Windows 宿主机的 localhost
+
+- **原因**：WSL 有自己独立的虚拟网卡，`localhost` 指向的是 Linux 内部。
+- **解决**：
+  1. 在 LM Studio 开启 **"Serve on Local Network"**。
+  2. 在 WSL 中获取网关 IP：`cat /etc/resolv.conf`（找 nameserver）或 `ip route show | grep default`。
+  3. 将 Agent 的 `base_url` 替换为网关 IP（如 `http://172.20.16.1:1234/v1`）。
+
+### APIError: n_keep >= n_ctx（书包比课桌大）
+
+- **错误**：`The number of tokens to keep... is greater than the context length`。
+- **原因**：Agent 预设长达 ~15,088 tokens，但 LM Studio 只分配了 4,096 的上下文。
+
+---
+
+## 终极解法：6GB 显卡吃下 64k 上下文的甜点配置
+
+在 GTX 1060（6GB 显存）上，将上下文设置到 64k 极易爆显存。不同规格模型的取舍：
+
+| 方案 | 模型 | 策略 | 显存占用 | 速度 | 智力 |
+|---|---|---|---|---|---|
+| A（力大砖飞） | Qwen 2.5 1.5B | 全量 GPU 卸载 | ~4GB | 极快 | 较弱 |
+| B（强行提智） | Qwen 3.5 9B | KV Cache 压到系统内存 | 16GB RAM | 极慢 | 强 |
+| **C（甜点位）⭐** | **Qwen 3.5 4B** | 均衡 | **~6GB** | **Good** | **Good** |
+
+**方案 C 的 LM Studio 必选高级设置**：
+
+| 设置项 | 值 | 说明 |
+|---|---|---|
+| Context Length | `65536` | 64k 上下文 |
+| GPU Offload | `Max` | 全部卸载到显卡 |
+| **K/V Cache Quantization** | **`Q4_0`** | **核心秘诀，节省 50%+ 缓存显存** |
+| Flash Attention | `ON` | 减少注意力计算显存峰值 |
+| Evaluation Batch Size | `256` | 避免老显卡驱动超时 |
+
+---
+
+## 核心认知总结
+
+1. **Agent 的开销陷阱**：Agent 模式与普通对话不同，它会在后台打包发送海量的人格和工具定义（轻松破 15k Tokens）。评估本地模型时必须以 Agent 场景为基准，而不是简单对话。
+
+2. **移动端的极限**：手机芯片处理长文本预填（Prefill）存在极大瓶颈，且散热会导致严重降频。手机端适合轻量级推理，不适合 Agent 工作流。
+
+3. **老显卡的新生命**：通过 `Flash Attention` + `KV Cache 量化（Q4_0）`，即便是 6GB 显存的 GTX 1060，也能运行 4B 级别的先进大模型，并承载 64k 的超长上下文环境。
