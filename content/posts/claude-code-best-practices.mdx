@@ -1,0 +1,100 @@
+---
+title: "Claude Code 最佳实践：多智能体架构拆解与 Codex 对比"
+date: "2026-04-26"
+description: "基于黑客松冠军项目 Everything Claude Code 拆解核心配置文件层级、多智能体架构与 Prompt 管理策略，并与 Codex 进行对比。"
+tags: ["Claude Code", "AI Agent", "Multi-Agent", "Prompt Engineering", "Codex"]
+lang: "zh"
+---
+
+> 以下内容基于黑客松冠军项目 **Everything Claude Code** 的最佳实践分享，结合个人实际使用经验整理。
+
+---
+
+## 配置文件层级
+
+AI 工具读取多级别配置（全局用户级 → 当前用户级 → 当前 Flow 级）。
+
+| 层级 | Claude Code | Codex | 用途 |
+|---|---|---|---|
+| System Prompts | `CLAUDE.md` | `AGENTS.md` | 项目简介、代码规范、安全规则 |
+| Rules | `rules/`（Claude Code 特有） | 需并入 System Prompts | Planner/Reviewer/E2E Runner 的工具使用约束 |
+| Context | `context/`（Claude Code 特有） | 需拷贝到 Agent Prompts | Agent 加载时同步读取的细化步骤 |
+| Slash Commands | `/commands` | 无对应 | 最细粒度、任务级别的具体指令 |
+
+细化程度：Context（粗）→ Agent Prompts（中）→ Slash Commands（最细）
+
+---
+
+## 多智能体架构
+
+**角色分工**：Planner → Coder → Tester → Reviewer，由主 Agent 统一调度。
+
+### 关键配置步骤
+
+1. **开启功能**：在 `toml.tml` 中开启 Multi-Agent 功能，并为每个子 Agent 配置模型和描述文件（`.md`）。
+
+2. **配置 Sandbox 权限**（极其重要）：
+   - 如果沙盒权限配置不到位，主 Agent 启动子 Agent 后，子 Agent 会因缺乏权限卡住（`Waiting for approval` 状态）。
+   - 由于完全交由主 Agent 管理，用户无法手动点击同意，整个流程被阻塞。
+   - **解决**：在配置文件中预先配置沙盒权限，或手动切换到该 Agent 进行授权。
+
+3. **配置 Command 权限**：与沙盒权限同理，必须提前配置好相关命令的执行权限。
+
+### 运行逻辑示例
+
+```
+主 Agent 启动 Planner → 等待规划完成
+主 Agent 启动 Coder → 等待编码完成
+主 Agent 并行启动 Tester + Reviewer → 等待双方完成
+主 Agent 验收 → 控制权交还用户
+```
+
+---
+
+## 多智能体的优势与劣势
+
+### 核心优势
+
+**上下文隔离（Context Isolation）**：如果一个 Agent 完成所有功能，上下文会被污染，AI 会遗忘关键信息或失去专注度。多智能体让每个 Agent 的上下文非常专注（写代码的只关注代码，测试的只关注测试）。
+
+**并行执行能力**：可以同时调度多个 Agent 执行不同任务，大幅提升效率，特别适合大型项目。
+
+### 核心劣势：二手信息问题
+
+主 Agent 的上下文是独立的——它收到的是子 Agent 返回的**二手信息**，在多轮交互中可能导致理解偏差或信息遗漏。
+
+**最佳实践建议**：
+- **Planner（规划）**：建议开发者手动切换到 Planner Agent 进行单独的多轮直接沟通，细化方案，**不要**让主 Agent 去调度它。
+- **Coder / Tester / Reviewer**：使用主 Agent 串行调度是合适的，这些环节对二手信息的敏感度较低。
+
+---
+
+## Prompt 加载策略的两种流派
+
+### 强约束流派（如 Everything Claude Code）
+
+加载大量 Plugins、System Prompts、Rules、Context 和 Agent Prompts。
+
+- **效果**：给 AI 施加了极强的约束，规则严密。
+- **隐患**：一开始就占用极大的上下文窗口，可能导致 AI 在海量指令中"迷失"，反而忽略了真正重要的事情。
+
+### 精准极简流派（推荐）
+
+- **理念**：需要什么就加载什么，尽量减少不必要的上下文干扰。
+- **实践**：
+  - 不要在项目中放入过多的 Skills / MCPs。
+  - 如果觉得 Prompt 不够，在具体的子任务或子项目中单独添加，而不是全量预加载。
+
+---
+
+## Claude Code vs Codex 关键差异
+
+| 特性 | Claude Code | Codex |
+|---|---|---|
+| 配置文件 | `CLAUDE.md` | `AGENTS.md` |
+| Rules 层级 | 有（独立 `rules/` 目录） | 无，需并入 System Prompts |
+| Context 层级 | 有（独立 `context/` 目录） | 无，需拷贝到 Agent Prompts |
+| Slash Commands | 支持 | 不支持 |
+| Multi-Agent | 支持 | 近期版本（100+）开始支持 |
+
+Codex 的适配策略：将 Claude Code 的 Rules 和 Context 内容分别揉入 System Prompts 和具体 Agent 的 Prompt 中。

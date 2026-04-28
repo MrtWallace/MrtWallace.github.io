@@ -1,0 +1,144 @@
+---
+title: "CTF Web Write-Up #1：CUIT 第 8 届极客大挑战"
+date: "2018-10-24"
+description: "CUIT 第 8 届 CTF 极客大挑战 Web 方向 Write-Up，涵盖 F12 利用、URL 操控、SQL 注入（万能钥匙）和 file 协议。附 Web2 漏洞 → Solidity 安全对照。"
+tags: ["CTF", "Security", "Web", "SQL Injection", "Solidity", "Web3"]
+lang: "zh"
+---
+
+# CTF Web Write-Up #1：CUIT 第 8 届极客大挑战
+
+## 0x00 写在前面
+
+这是 [CUIT 第 8 届 CTF 极客大挑战](https://geek.sycsec.com/) Web 方向的 Write-Up。写这个的时候，博主刚刚入门一个月，很菜 XD，谨此记录一下自己的学习历程。
+
+时隔多年回看这些题目，发现这些「入门级」漏洞和智能合约安全里的核心问题本质上是同一类：**外部输入没有被正确处理**。Web3 开发者尤其值得对这些基础有扎实的理解。
+
+---
+
+## 0x01 2000字的检讨 — F12 利用
+
+**考点：浏览器开发者工具**
+
+进去之后发现关键信息藏在 HTML 注释或者 JavaScript 变量里。F12 打开开发者工具，在 Sources / Elements 面板里可以直接看到被隐藏的 flag 或者提示。（充钱也不是不可以啦 XD）
+
+**套路总结**：永远不要相信客户端隐藏的信息。前端混淆 ≠ 安全。
+
+---
+
+## 0x02 幸运大挑战 — URL 操控
+
+**考点：URL 参数篡改**
+
+地址栏本身就是攻击面。通过修改 URL 中的参数，可以绕过前端逻辑，访问原本不该访问的页面。（macbook 上输入法把直引号转成弯引号，payload 失效，坑了 QAQ）
+
+**套路总结**：服务端必须独立校验所有参数，不能依赖前端传来的值。
+
+---
+
+## 0x03 代号为 geek 的行动 — SQL 注入
+
+**考点：SQL 注入 / 万能钥匙**
+
+第一幕是 misc 题 XD，第二幕点进去发现一个登录界面。当时我还不会 SQL 注入，但从网上找到了一个叫「万能钥匙」的方法：
+
+```sql
+'or 1=1#
+```
+
+这几个看似不起眼的字符为什么能登录任意账户？
+
+PHP 把用户输入直接拼接到 SQL 语句里：
+
+```sql
+SELECT * FROM users WHERE username='$input' AND password='...'
+```
+
+输入万能钥匙后，实际执行的 SQL 变成：
+
+```sql
+SELECT * FROM users WHERE username='' or 1=1#' AND password='...'
+```
+
+`#` 是 MySQL 注释符，后面全部被忽略；`or 1=1` 永远为真，于是绕过密码校验。
+
+**核心问题**：将字符串数据当作代码执行。根本原因是没有使用参数化查询（Prepared Statements）。后面还有道番外，就是真真正正用到了 SQL 注入……
+
+---
+
+## 0x04 江江师傅的秘密 — file:// 协议
+
+**考点：任意文件读取 / file 协议**
+
+进去是个代理网站，题目要求拿到 C 盘下的 `study.txt`。一脸黑人问号？？？毫无头绪，百度也没有相应的 wp。
+
+后来 Web 培训讲到了 file 协议才豁然开朗——代理服务器会帮你请求任意 URL，而 `file://` 协议可以访问本地文件系统：
+
+```
+file:///C:/study.txt
+```
+
+只要服务端没有过滤协议类型，就能通过代理读取服务器本地的任意文件。
+
+---
+
+目前只做了这些 XD，会有后续更新……吧。
+
+---
+
+## 延伸阅读：Web2 经典漏洞 → Solidity 安全对照
+
+这些题目里的漏洞在智能合约世界有着直接的映射关系。
+
+### SQL 注入 → 重入攻击（Reentrancy）
+
+两者的本质相同：**外部输入（或外部调用）在没有被正确隔离的情况下干扰了程序的执行逻辑**。
+
+SQL 注入：字符串数据被当作可执行代码处理。  
+重入攻击：外部合约调用（`call`）在状态更新**之前**就把控制权交出去，攻击者反复进入同一函数（The DAO 事件，$60M 损失）。
+
+```solidity
+// 漏洞版本
+function withdraw(uint amount) external {
+    require(balances[msg.sender] >= amount);
+    (bool ok,) = msg.sender.call{value: amount}(""); // 先转账
+    balances[msg.sender] -= amount;                  // 再更新状态 ← 重入点
+}
+
+// 修复版本（Checks-Effects-Interactions 模式）
+function withdraw(uint amount) external {
+    require(balances[msg.sender] >= amount);
+    balances[msg.sender] -= amount; // 先更新状态
+    (bool ok,) = msg.sender.call{value: amount}(""); // 再交互
+    require(ok);
+}
+```
+
+### 整数安全 → Solidity 整数溢出
+
+Web 安全中的整数边界问题（PHP 弱类型、分页计算溢出），在 Solidity 中同样存在：
+
+- **Solidity 0.8.0 以前**：整数溢出/下溢是已知噩梦（如 BEC Token 溢出攻击）。
+- **Solidity 0.8.0 以后**：内置溢出检查，溢出时自动 revert，但可以用 `unchecked {}` 块绕过。
+- **精度折损**：由于 Solidity 没有浮点数，数值敏感的 DeFi 合约必须遵循「先乘后除」原则，否则会导致严重的利息计算偏差。
+
+### URL 参数篡改 → 访问控制缺失
+
+绕过前端参数校验 = 绕过链上权限检查。
+
+```solidity
+// 漏洞版本：忘记检查调用者
+function setOwner(address newOwner) external {
+    owner = newOwner; // 任何人都能调用！
+}
+
+// 修复版本
+function setOwner(address newOwner) external {
+    require(msg.sender == owner, "Not owner");
+    owner = newOwner;
+}
+```
+
+---
+
+*对智能合约安全感兴趣？推荐从 [Ethernaut](https://ethernaut.openzeppelin.com/) 和 [Damn Vulnerable DeFi](https://www.damnvulnerabledefi.xyz/) 开始。*

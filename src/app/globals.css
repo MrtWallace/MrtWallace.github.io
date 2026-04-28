@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0a0f;
+  --surface: #12121a;
+  --border: #1e1e2e;
+  --primary: #7c3aed;
+  --secondary: #3b82f6;
+  --text: #f1f5f9;
+  --muted: #64748b;
+  --success: #22c55e;
+  --warning: #f59e0b;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text);
+}
+
+/* rehype-pretty-code 代码块样式 */
+[data-rehype-pretty-code-figure] pre {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+[data-rehype-pretty-code-figure] code {
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+[data-line] {
+  padding: 0 0.5rem;
+}
