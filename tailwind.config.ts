@@ -23,6 +23,17 @@ const config: Config = {
         foreground: "var(--text)",
         muted: "var(--muted)",
       },
+      backgroundColor: {
+        glass: "var(--glass-bg)",
+      },
+      borderColor: {
+        glass: "var(--glass-border)",
+        "glass-inset": "var(--glass-border-inset)",
+      },
+      boxShadow: {
+        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 var(--glass-border), inset 0 -1px 0 0 var(--glass-border-inset)",
+        "glass-glow": "0 0 20px 0 var(--glass-glow), inset 0 1px 0 0 var(--glass-border), inset 0 -1px 0 0 var(--glass-border-inset)",
+      },
       typography: {
         DEFAULT: {
           css: {

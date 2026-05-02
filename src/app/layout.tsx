@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { JetBrains_Mono } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { MouseGlow } from "@/components/MouseGlow";
 import "./globals.css";
 
 const inter = Inter({
@@ -44,8 +45,9 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased bg-background text-foreground min-h-screen flex flex-col`}
       >
+        <MouseGlow />
         <Navbar />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 relative z-10">{children}</main>
         <Footer />
       </body>
     </html>

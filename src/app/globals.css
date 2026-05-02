@@ -3,19 +3,32 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0f;
-  --surface: #12121a;
-  --border: #1e1e2e;
-  --primary: #7c3aed;
-  --secondary: #3b82f6;
-  --text: #f1f5f9;
-  --muted: #64748b;
-  --success: #22c55e;
-  --warning: #f59e0b;
+  /* Slate/Zinc Dark Mode Palette */
+  --background: #020617; /* slate-950 */
+  --surface: #0f172a; /* slate-900 */
+  --border: #1e293b; /* slate-800 */
+  
+  /* Monochrome Editorial Accents */
+  --primary: #cbd5e1; /* slate-300 */
+  --secondary: #64748b; /* slate-500 */
+  --text: #f8fafc; /* slate-50 */
+  --muted: #475569; /* slate-600 */
+  --success: #10b981; 
+  --warning: #f59e0b; 
+  
+  /* Glassmorphism Variables */
+  --glass-bg: rgba(255, 255, 255, 0.02); /* More transparent surface */
+  --glass-border: rgba(255, 255, 255, 0.05); /* Subtle light edge */
+  --glass-border-inset: rgba(0, 0, 0, 0.3); /* Shadow edge for depth */
+  --glass-glow: rgba(255, 255, 255, 0.02); /* Slight inner highlight */
 }
 
 body {
   background-color: var(--background);
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(124, 58, 237, 0.06), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.04), transparent 25%);
+  background-attachment: fixed;
   color: var(--text);
 }
 
