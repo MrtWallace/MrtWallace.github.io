@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Github } from "lucide-react";
+import { GitHubIcon } from "@/components/ui/icons";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -37,7 +37,7 @@ export function Navbar() {
             className="text-[var(--muted)] hover:text-[var(--text)] transition-colors"
             aria-label="GitHub"
           >
-            <Github size={18} />
+            <GitHubIcon size={18} />
           </a>
         </nav>
       </div>
