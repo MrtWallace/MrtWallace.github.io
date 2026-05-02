@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://mrtwallace.github.io"),
+  metadataBase: new URL("https://mrwallac3.dpdns.org"),
   title: {
     default: "MrtWallace",
     template: "%s | MrtWallace",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "zh_CN",
-    url: "https://mrtwallace.github.io",
+    url: "https://mrwallac3.dpdns.org",
     siteName: "MrtWallace",
   },
   twitter: {
